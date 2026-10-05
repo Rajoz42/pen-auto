@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freebuff Pentest Dashboard — Anonymity Routing &amp; Scan Pipeline</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#121826; --panel-2:#182034; --ink:#e8edf7; --muted:#9aa7bf;
+    --line:#26304a; --accent:#5b9dff; --accent-2:#7ef0c2; --warn:#ffc46b; --bad:#ff6b7d; --ok:#5fe0a0;
+    --code:#0d1524; --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f5f7fb; --panel:#ffffff; --panel-2:#eef2f9; --ink:#111827; --muted:#5b6b85;
+      --line:#d8e0ee; --accent:#2563eb; --accent-2:#0f9d76; --warn:#b26a00; --bad:#d1293d; --ok:#0f9d5a;
+      --code:#f1f4fa; --shadow:0 8px 24px rgba(20,40,80,.10);
+    }
+  }
+  html[data-theme="dark"]{--bg:#0b0f17;--panel:#121826;--panel-2:#182034;--ink:#e8edf7;--muted:#9aa7bf;--line:#26304a;--accent:#5b9dff;--accent-2:#7ef0c2;--warn:#ffc46b;--bad:#ff6b7d;--ok:#5fe0a0;--code:#0d1524;--shadow:0 10px 30px rgba(0,0,0,.35);}
+  html[data-theme="light"]{--bg:#f5f7fb;--panel:#ffffff;--panel-2:#eef2f9;--ink:#111827;--muted:#5b6b85;--line:#d8e0ee;--accent:#2563eb;--accent-2:#0f9d76;--warn:#b26a00;--bad:#d1293d;--ok:#0f9d5a;--code:#f1f4fa;--shadow:0 8px 24px rgba(20,40,80,.10);}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  a{color:var(--accent)}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:.86em}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px}
+  header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:10px}
+  .eyebrow{color:var(--accent-2);font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:.72rem}
+  h1{font-size:clamp(1.5rem,3.4vw,2.3rem);line-height:1.15;margin:.25em 0 .3em}
+  h2{font-size:1.25rem;margin:0 0 .2em;letter-spacing:.01em}
+  h3{font-size:1rem;margin:1.1em 0 .3em}
+  p{margin:.5em 0}
+  .sub{color:var(--muted);max-width:74ch}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px 22px;margin:18px 0;box-shadow:var(--shadow)}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:6px}
+  .kpi .card{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .kpi .n{font-size:1.5rem;font-weight:800;color:var(--accent)}
+  .kpi .n.good{color:var(--ok)} .kpi .n.bad{color:var(--bad)} .kpi .n.warn{color:var(--warn)}
+  .kpi .l{color:var(--muted);font-size:.82rem}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+  .tag{display:inline-block;font-size:.72rem;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .tag.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+  .tag.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,transparent)}
+  .tag.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:.92rem}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
+  .mono,.pill{overflow-wrap:anywhere}
+  th{color:var(--muted);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}
+  tr:last-child td{border-bottom:none}
+  .pill{font-family:ui-monospace,monospace;font-size:.8rem;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:2px 7px}
+  .note{border-left:3px solid var(--accent);background:var(--panel-2);padding:10px 14px;border-radius:0 10px 10px 0;margin:12px 0}
+  .note.warn{border-left-color:var(--warn)} .note.bad{border-left-color:var(--bad)} .note.ok{border-left-color:var(--ok)}
+  .btn{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:7px 12px;cursor:pointer;font-size:.85rem}
+  .btn:hover{border-color:var(--accent)}
+  .seg{display:inline-flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+  .seg .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:26px}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:12px 0 0;display:grid;gap:8px}
+  ol.steps li{counter-increment:s;position:relative;padding:11px 14px 11px 52px;background:var(--panel-2);border:1px solid var(--line);border-radius:12px}
+  ol.steps li::before{content:counter(s);position:absolute;left:14px;top:11px;width:26px;height:26px;border-radius:8px;
+    display:grid;place-items:center;font-weight:800;font-size:.85rem;color:var(--bg);background:var(--accent)}
+  .flow{background:var(--panel-2);border:1px solid var(--line);border-radius:14px;padding:10px 8px;margin-top:10px;overflow:auto}
+  .flow svg{min-width:640px}
+  figure{margin:0}
+  figcaption{color:var(--muted);font-size:.84rem;margin-top:6px}
+  .mods{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:12px}
+  .mod{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .mod h3{margin:0 0 6px;font-size:.95rem}
+  .mod .owns{color:var(--muted);font-size:.85rem}
+  .mod .file{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--accent-2)}
+  .ba{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-top:10px}
+  @media (max-width:700px){.ba{grid-template-columns:1fr}}
+  .ba .box{border:1px dashed var(--line);border-radius:12px;padding:12px 14px;background:var(--panel-2)}
+  .ba .mid{color:var(--accent);font-weight:800}
+  .bar{height:10px;border-radius:999px;background:var(--line);overflow:hidden;margin-top:6px}
+  .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+  ul.checks{list-style:none;padding:0;margin:10px 0 0;display:grid;gap:8px}
+  ul.checks li{background:var(--panel-2);border:1px solid var(--line);border-radius:12px;padding:10px 13px}
+  @media (prefers-reduced-motion: no-preference){ .pulse{animation:p 1.8s ease-in-out infinite} }
+  @keyframes p{0%,100%{opacity:.55}50%{opacity:1}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Pentest Recon Dashboard · Architecture &amp; Behaviour</div>
+      <h1>Routing scans through Tor, and making results actually visible</h1>
+      <p class="sub">A visual walkthrough of the egress-routing redesign, the scan pipeline, the five defects that
+      made the tool "not do its job", and the honest limits of anonymity routing through Tor on Windows.</p>
+    </div>
+    <button class="btn" id="themeBtn" title="Toggle light/dark">◐ Theme</button>
+  </header>
+
+  <section id="verdict">
+    <h2>Where it landed</h2>
+    <p class="sub">Measured on the operator's Windows box, after the changes below.</p>
+    <div class="kpi">
+      <div class="card"><div class="n good">10</div><div class="l">open ports found on a real scan through Tor (<span class="mono">scanme.nmap.org</span>)</div></div>
+      <div class="card"><div class="n good">true</div><div class="l"><span class="mono">IsTor</span> from check.torproject.org via the SOCKS proxy</div></div>
+      <div class="card"><div class="n">92</div><div class="l">automated tests passing (was 0 coverage of routing)</div></div>
+      <div class="card"><div class="n good">2.5s</div><div class="l">Tor daemon bootstrap, then auto-torn-down after the scan</div></div>
+    </div>
+    <div class="note ok">The routed scan now runs end-to-end from the UI, persists its ports, and renders them from the
+    database — so results survive a page refresh and failures explain themselves.</div>
+  </section>
+
+  <section id="problem">
+    <h2>1 · The problem, and what "totally different approach" meant</h2>
+    <div class="grid2">
+      <div>
+        <span class="tag bad">before</span>
+        <h3>Routed scans died instantly</h3>
+        <p>A routed scan crashed the moment the route emitted its first message, and the crash reason existed only in a
+        live SSE stream that vanished on refresh. If nothing went wrong, an <em>empty</em> result looked identical to a
+        <em>failed</em> one.</p>
+      </div>
+      <div>
+        <span class="tag ok">after</span>
+        <h3>Failures are first-class; results are durable</h3>
+        <p>The route emits through a typed adapter, failures persist an <span class="mono">error</span> column and show a
+        red banner, empty-but-successful scans get an amber notice, and every port card, triage label and export is
+        re-rendered from SQLite.</p>
+      </div>
+    </div>
+    <div class="note">Same UI, same routes — but the state now has <strong>one owner</strong> (the database) and the
+    engine reports what really happened instead of silently returning an empty result.</div>
+  </section>
+  <section id="routes">
+    <h2>2 · Four egress routes, one policy object</h2>
+    <p class="sub">The route is chosen per scan. <strong>Tor is the default</strong>, so forgetting to pick a route
+    never scans from the operator's real IP. A route is <em>validated</em> before the scan starts and the engine
+    <em>refuses</em> rather than silently falling back to a different egress path.</p>
+    <div class="seg" role="group" aria-label="Platform">
+      <button class="btn" data-plat="windows" aria-pressed="true">Windows</button>
+      <button class="btn" data-plat="linux" aria-pressed="false">Linux</button>
+    </div>
+    <table>
+      <thead><tr><th>Route</th><th>Anon</th><th>How nmap is sent</th><th>Side effects</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Direct</strong></td><td><span class="tag">no</span></td>
+          <td class="pl" data-w="plain nmap" data-l="plain nmap">plain nmap</td>
+          <td>Warns: packets leave from this host's real IP.</td></tr>
+        <tr><td><strong>Tor</strong></td><td><span class="tag ok">yes</span></td>
+          <td class="pl" data-w="nmap --proxies socks4://127.0.0.1:9050" data-l="proxychains4 -q nmap ...">…</td>
+          <td>Auto-starts <span class="mono">tor.exe</span>, forces <span class="mono">-sT</span>, stops the daemon after.</td></tr>
+        <tr><td><strong>Proton VPN</strong></td><td><span class="tag ok">yes</span></td>
+          <td class="pl" data-w="wait for the app's VPN tunnel" data-l="protonvpn connect --fastest">…</td>
+          <td>Windows: no CLI — waits up to 120s for the tunnel, else refuses.</td></tr>
+        <tr><td><strong>Tor over Proton</strong></td><td><span class="tag ok">yes</span></td>
+          <td class="pl" data-w="tunnel first, then nmap --proxies" data-l="tunnel first, then proxychains4">…</td>
+          <td>Both of the above, in that order.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>The route decision, end to end</h3>
+    <div class="flow" aria-label="Route activation flow">
+      <svg viewBox="0 0 980 210" role="img" aria-label="Flow from request to egress" style="width:100%;height:auto;display:block">
+        <defs><marker id="arw" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 z" fill="var(--accent)"/></marker></defs>
+        <g font-family="ui-sans-serif,system-ui" font-size="13" fill="var(--ink)">
+          <rect x="8" y="72" rx="12" width="150" height="64" fill="var(--panel-2)" stroke="var(--line)"/>
+          <text x="83" y="99" text-anchor="middle" font-weight="700">POST /scan</text>
+          <text x="83" y="118" text-anchor="middle" fill="var(--muted)">authz + route</text>
+
+          <rect x="196" y="72" rx="12" width="168" height="64" fill="var(--panel-2)" stroke="var(--line)"/>
+          <text x="280" y="95" text-anchor="middle" font-weight="700">build_route_plan()</text>
+          <text x="280" y="114" text-anchor="middle" fill="var(--muted)">validate, never launch</text>
+
+          <rect x="402" y="72" rx="12" width="176" height="64" fill="var(--panel-2)" stroke="var(--line)"/>
+          <text x="490" y="95" text-anchor="middle" font-weight="700">ensure_route()</text>
+          <text x="490" y="114" text-anchor="middle" fill="var(--muted)">start tor / wait tunnel</text>
+
+          <rect x="616" y="72" rx="12" width="150" height="64" fill="var(--panel-2)" stroke="var(--line)"/>
+          <text x="691" y="99" text-anchor="middle" font-weight="700">nmap</text>
+          <text x="691" y="118" text-anchor="middle" fill="var(--muted)">streams → XML</text>
+
+          <rect x="804" y="72" rx="12" width="168" height="64" fill="var(--panel-2)" stroke="var(--line)"/>
+          <text x="888" y="95" text-anchor="middle" font-weight="700">teardown_route()</text>
+          <text x="888" y="114" text-anchor="middle" fill="var(--muted)">stop what we started</text>
+
+          <g stroke="var(--accent)" stroke-width="1.6" fill="none" marker-end="url(#arw)">
+            <path d="M158,104 H194"/><path d="M364,104 H400"/><path d="M578,104 H614"/><path d="M766,104 H802"/>
+          </g>
+          <text x="490" y="52" text-anchor="middle" fill="var(--muted)">RoutePlan = validated input</text>
+          <text x="888" y="52" text-anchor="middle" fill="var(--muted)">state = runtime result</text>
+        </g>
+      </svg>
+    </div>
+  </section>
+  <section id="pipeline">
+    <h2>3 · The scan lifecycle</h2>
+    <p class="sub">Every step writes durable state, so the UI can reconstruct the whole story even after a refresh.</p>
+    <ol class="steps">
+      <li><strong>Authorize.</strong> Authorization is logged <em>before</em> any scanning; the engine refuses to run without a matching record.</li>
+      <li><strong>Preflight.</strong> Resolve the nmap binary, check privileges, and degrade the profile honestly when raw sockets aren't available.</li>
+      <li><strong>Plan the route.</strong> <span class="mono">build_route_plan()</span> validates tools and returns a <span class="mono">RoutePlan</span> — or an error that refuses the scan.</li>
+      <li><strong>Rewrite flags.</strong> A SOCKS route forces a TCP connect scan and drops flags it cannot carry.</li>
+      <li><strong>Activate.</strong> Start <span class="mono">tor.exe</span> or wait for the VPN tunnel; report failure in the returned state.</li>
+      <li><strong>Run &amp; stream.</strong> nmap output is classified (port / phase / stats / warn) and pushed to the SSE stream.</li>
+      <li><strong>Parse &amp; verify.</strong> The XML is parsed for hosts, ports, OS matches — <em>and</em> nmap's own <span class="mono">runstats</span> error, which now fails the scan loudly.</li>
+      <li><strong>Correlate.</strong> Ports are matched against ExploitDB + NVD, through the same proxy, to avoid leaking the real IP.</li>
+      <li><strong>Persist &amp; render.</strong> Results land in SQLite; the page renders from the DB, not from memory.</li>
+      <li><strong>Tear down.</strong> The Tor daemon started for this scan is stopped again.</li>
+    </ol>
+  </section>
+
+  <section id="fixes">
+    <h2>4 · Five defects, ranked by blast radius</h2>
+    <table>
+      <thead><tr><th>#</th><th>Defect</th><th>Symptom</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><span class="tag bad">critical</span> Event signature mismatch</td>
+          <td><em>Every</em> routed scan crashed with <span class="mono">emit() missing 1 required positional argument</span> — the route emits dicts, <span class="mono">emit</span> wanted <span class="mono">(kind, message)</span>.</td>
+          <td>A <span class="mono">_route_event</span> adapter maps dict → typed emit.</td></tr>
+        <tr><td>2</td><td><span class="tag warn">high</span> Silent nmap errors</td>
+          <td>nmap writes fatal flag errors into the XML with <span class="mono">exit="error"</span> while exiting 0, so a failed scan was recorded as <em>completed, 0 ports</em>.</td>
+          <td>The parser exposes <span class="mono">meta.error</span> and the engine raises instead of reporting an empty success.</td></tr>
+        <tr><td>3</td><td><span class="tag warn">high</span> Failures were invisible</td>
+          <td>The crash reason lived only in the live stream; after a refresh the scan looked like a quiet zero-result.</td>
+          <td>An <span class="mono">error</span> column persisted on the scan and a red banner in the UI.</td></tr>
+        <tr><td>4</td><td><span class="tag">medium</span> Shadowed <span class="mono">dropped</span> list</td>
+          <td><span class="mono">route_dropped_flags</span> was always empty, hiding which flags a SOCKS route disabled.</td>
+          <td>The list is initialised once and populated before use.</td></tr>
+        <tr><td>5</td><td><span class="tag">low</span> <span class="mono">create_scan</span> dropped <span class="mono">error</span></td>
+          <td>Seeding a scan with an error silently lost it (only <span class="mono">update_scan</span> persisted it).</td>
+          <td>The INSERT now includes the <span class="mono">error</span> column.</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section id="arch">
+    <h2>5 · The structure after the pass</h2>
+    <p class="sub">Two concerns were previously entangled: <em>deciding the egress</em> and <em>running the scan</em>.
+    They now live in different modules with a single direction of data flow.</p>
+    <div class="mods">
+      <div class="mod"><h3>Egress policy</h3>
+        <div class="file">app/network.py</div>
+        <p class="owns">Owns: route catalog, tool detection, the <span class="mono">RoutePlan</span>, flag rewriting,
+        daemon start/stop. Never runs nmap.</p></div>
+      <div class="mod"><h3>Orchestration</h3>
+        <div class="file">app/scan/engine.py</div>
+        <p class="owns">Owns: preflight, the run loop, streaming, teardown. Delegates routing to <span class="mono">network</span>.</p></div>
+      <div class="mod"><h3>Data shape</h3>
+        <div class="file">app/scan/parser.py</div>
+        <p class="owns">Owns: nmap XML → models, including <span class="mono">runstats</span> exit/error. No process logic.</p></div>
+      <div class="mod"><h3>Persistence</h3>
+        <div class="file">app/db.py</div>
+        <p class="owns">Owns: scans, ports, candidates, audit. The single source of truth the UI renders from.</p></div>
+      <div class="mod"><h3>Interface</h3>
+        <div class="file">app/main.py</div>
+        <p class="owns">Owns: HTTP routes, the worker thread, SSE, and render-ready view models.</p></div>
+    </div>
+
+    <h3>State ownership: the plan is an input, not a scratchpad</h3>
+    <div class="ba">
+      <div class="box"><span class="tag bad">before</span>
+        <p><span class="mono">ensure_route()</span> set <span class="mono">plan.ok = False</span> on runtime failure, so the
+        same object was both the validated <em>request</em> and the runtime <em>outcome</em>. Callers had to re-read a
+        mutated plan to learn what happened.</p></div>
+      <div class="mid">→</div>
+      <div class="box"><span class="tag ok">after</span>
+        <p><span class="mono">ensure_route()</span> returns <span class="mono">{ok, error, tor_proc, …}</span> and never
+        touches the plan. The engine reads the state; the plan stays the immutable thing it was validated as.</p></div>
+    </div>
+    <div class="note">Also removed: a dead duplicate <span class="mono">platform_name()</span> in the engine, unused
+    <span class="mono">platform</span>/<span class="mono">sys</span> imports, and a doubled <span class="mono">shutil.which</span>
+    scan in <span class="mono">detect_programs()</span>. The <span class="mono">_prepare_route()</span> extraction keeps
+    <span class="mono">run()</span> about executing a scan, not about choosing an egress path.</div>
+  </section>
+  <section id="limits">
+    <h2>6 · What Tor can and cannot do here — the honest limits</h2>
+    <p class="sub">These are protocol realities, not bugs. The engine surfaces them in the scan log so an operator is
+    never misled.</p>
+    <table>
+      <thead><tr><th>Limit</th><th>Why</th><th>Consequence</th></tr></thead>
+      <tbody>
+        <tr><td>TCP connect scan forced</td><td>A SOCKS proxy cannot carry raw SYN packets, so <span class="mono">-sS</span>, <span class="mono">-O</span> and fragmentation are dropped and <span class="mono">-sT</span> is inserted.</td>
+          <td>Slower scans; OS detection is unavailable through the route.</td></tr>
+        <tr><td><span class="mono">tcpwrapped</span> results</td><td>Tor exits may accept the connection and close it without a banner.</td>
+          <td>A port reported <span class="mono">tcpwrapped</span> is expected, not a misconfiguration.</td></tr>
+        <tr><td>DNS is not resolved by the proxy</td><td>nmap's <span class="mono">--proxies</span> speaks <strong>SOCKS4</strong>, which has no remote hostname resolution.</td>
+          <td>Scan <strong>IP addresses</strong>: a hostname is resolved locally first (a DNS leak).</td></tr>
+        <tr><td>Proton VPN needs the app</td><td>The official Windows client has no CLI; the installer can only point you to the download page.</td>
+          <td>The route waits for the tunnel interface (up to 120s) and refuses rather than scanning the wrong egress.</td></tr>
+      </tbody>
+    </table>
+    <div class="note warn">Throughput through Tor is inherently slow and jittery. A single small scan of
+    <span class="mono">scanme.nmap.org</span> took <strong>68s</strong> — mostly Tor circuit latency, not the tooling.</div>
+  </section>
+
+  <section id="evidence">
+    <h2>7 · How this was verified</h2>
+    <ul class="checks">
+      <li><span class="tag ok">live</span> A real routed scan through Tor found 10 open ports (22, 25, 80, 110, 119, 143, 465, 587, 993, 995).</li>
+      <li><span class="tag ok">live</span> Egress confirmed as Tor: <span class="mono">{IsTor: true, IP: 192.42.116.x}</span> via the SOCKS proxy.</li>
+      <li><span class="tag ok">live</span> The daemon we started was stopped after the scan (the SOCKS listener disappeared).</li>
+      <li><span class="tag ok">live</span> The web surface (FastAPI <span class="mono">TestClient</span>): home renders the default-Tor selector; a finished scan renders its port cards; a failed scan shows its <em>persisted</em> error; <span class="mono">/scans/{id}/xml</span> serves valid nmap XML.</li>
+      <li><span class="tag ok">unit</span> 92 tests pass, including regressions pinning each defect above.</li>
+    </ul>
+    <div class="bar" aria-hidden="true"><i style="width:100%"></i></div>
+    <figcaption>92 / 92 automated tests passing after the architecture pass.</figcaption>
+  </section>
+
+</div>
+<script>
+  (function(){
+    var root=document.documentElement, btn=document.getElementById('themeBtn');
+    var pref=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';
+    root.setAttribute('data-theme',pref);
+    btn.addEventListener('click',function(){
+      root.setAttribute('data-theme', root.getAttribute('data-theme')==='dark'?'light':'dark');
+    });
+    // Platform toggle for the route table.
+    var plat='windows';
+    function paint(){
+      document.querySelectorAll('.pl').forEach(function(cell){
+        cell.textContent = cell.getAttribute('data-'+plat[0]);
+      });
+      document.querySelectorAll('[data-plat]').forEach(function(b){
+        b.setAttribute('aria-pressed', b.getAttribute('data-plat')===plat ? 'true':'false');
+      });
+    }
+    document.querySelectorAll('[data-plat]').forEach(function(b){
+      b.addEventListener('click',function(){ plat=b.getAttribute('data-plat'); paint(); });
+    });
+    paint();
+  })();
+</script>
+</body>
+</html>
