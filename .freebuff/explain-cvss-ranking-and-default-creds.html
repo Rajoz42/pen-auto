@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triage order, CVSS, and default credentials — what changed in the dashboard</title>
+<style>
+  /* ---------------------------------------------------------------------
+     A case-file, not a dashboard: the page is paper, the machine output is
+     quoted on dark slabs, and the only saturated colour in the document is
+     the product's own finding palette (red / amber / grey / blue / violet).
+     --------------------------------------------------------------------- */
+  :root{
+    --paper:#eef1f5;      /* cool pale slate, deliberately not warm cream */
+    --paper-2:#e3e8ee;
+    --ink:#151d27;
+    --ink-2:#4a5766;
+    --rule:#c3ccd6;
+    --slab:#0d131c;       /* the terminal the report quotes */
+    --slab-ink:#c7d0e0;
+    /* The product's real palette (app/static/style.css) */
+    --high:#c0392f;
+    --medium:#97700f;
+    --low:#5c6773;
+    --access:#8a4fae;
+    --accent:#1e63b3;
+    --ok:#1f7a3f;
+    --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+    --serif:Georgia,"Iowan Old Style","Times New Roman",serif;
+    --measure:66ch;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--serif);font-size:17px;line-height:1.62;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px 96px}
+  a{color:var(--accent)}
+  a:focus-visible,button:focus-visible,summary:focus-visible{
+    outline:3px solid var(--accent);outline-offset:2px;
+  }
+  code,kbd{font-family:var(--mono);font-size:.86em}
+
+  /* ---------------------------------------------------------- masthead */
+  header.mast{border-bottom:3px double var(--ink);padding:44px 0 18px;margin-bottom:8px}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.08em;color:var(--ink-2);
+    display:flex;gap:14px;flex-wrap:wrap;margin:0 0 14px}
+  h1{font-size:clamp(28px,4.4vw,44px);line-height:1.12;margin:0 0 14px;font-weight:600;
+     max-width:24ch;letter-spacing:-.01em}
+  .standfirst{font-size:19px;color:var(--ink-2);max-width:var(--measure);margin:0 0 22px}
+  .artifacts{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12px}
+  .artifacts span{border:1px solid var(--rule);background:var(--paper-2);
+    padding:3px 9px;border-radius:3px;color:var(--ink-2)}
+
+  /* ------------------------------------------------------------ layout */
+  main{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+  section{padding:34px 0 6px;border-bottom:1px solid var(--rule)}
+  section:last-of-type{border-bottom:0}
+  .step{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);margin:0 0 6px}
+  h2{font-size:clamp(21px,2.6vw,27px);line-height:1.2;margin:0 0 12px;font-weight:600;
+     letter-spacing:-.005em}
+  h3{font-size:17px;margin:26px 0 8px;font-weight:600}
+  p{max-width:var(--measure);margin:0 0 14px}
+  ul,ol{max-width:var(--measure)}
+  li{margin:0 0 6px}
+  .lede{font-size:18px}
+  .muted{color:var(--ink-2)}
+
+  /* ------------------------------------------------------------- slabs */
+  pre,.slab{background:var(--slab);color:var(--slab-ink);border-radius:6px;
+    padding:14px 16px;overflow:auto;font-family:var(--mono);font-size:12.5px;
+    line-height:1.65;margin:14px 0;max-width:100%}
+  .slab b{color:#fff;font-weight:600}
+  .slab .c-high{color:#ff8b85}
+  .slab .c-med{color:#e9c46a}
+  .slab .c-low{color:#93a1b1}
+  .slab .c-access{color:#d9a6f5}
+  .slab .c-dim{color:#6b7688}
+  .slab .c-ok{color:#7ee0a1}
+  .slab .c-acc{color:#8fc0f5}
+  figcaption{font-family:var(--mono);font-size:12px;color:var(--ink-2);margin:-6px 0 0}
+  figure{margin:18px 0 22px}
+
+  /* ------------------------------------------------------------ tables */
+  table{border-collapse:collapse;width:100%;margin:16px 0 20px;font-size:14.5px}
+  caption{text-align:left;font-family:var(--mono);font-size:12px;color:var(--ink-2);
+    padding:0 0 8px}
+  th,td{text-align:left;vertical-align:top;padding:9px 12px 9px 0;
+    border-bottom:1px solid var(--rule)}
+  thead th{border-bottom:2px solid var(--ink);font-weight:600;font-size:13px}
+  tbody tr:last-child td{border-bottom:0}
+  td code{overflow-wrap:anywhere}
+  .scrollable{overflow-x:auto}
+
+  /* --------------------------------------------------------- tier chips */
+  .tier{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);
+    font-size:12px;white-space:nowrap}
+  .dot{width:11px;height:11px;border-radius:2px;display:inline-block;flex:0 0 auto}
+  .t-high{background:var(--high)} .t-medium{background:var(--medium)}
+  .t-low{background:var(--low)} .t-access{background:var(--access)}
+  .t-none{background:#b6bec8}
+
+  /* ------------------------------------------------------------ callout */
+  .note{border-left:4px solid var(--accent);background:var(--paper-2);
+    padding:12px 16px;margin:18px 0;max-width:var(--measure)}
+  .note.warn{border-left-color:var(--medium)}
+  .note.careful{border-left-color:var(--high)}
+  .note.ok{border-left-color:var(--ok)}
+  .note p:last-child{margin-bottom:0}
+  .note .lbl{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;
+    color:var(--ink-2);display:block;margin-bottom:4px}
+
+  /* ------------------------------------------------------------ diagram */
+  .diagram{background:#fff;border:1px solid var(--rule);border-radius:8px;
+    padding:8px 4px;overflow:auto}
+  .diagram svg{display:block;min-width:760px;height:auto}
+  .diagram figcaption{padding:6px 10px 0}
+
+  /* --------------------------------------------------------- interactive */
+  .demo{background:#fff;border:1px solid var(--rule);border-radius:8px;padding:16px}
+  .demo-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+    font-family:var(--mono);font-size:12.5px;margin-bottom:12px}
+  .demo-controls button{font-family:var(--mono);font-size:12.5px;padding:6px 12px;
+    border-radius:5px;border:1px solid var(--rule);background:var(--paper-2);
+    color:var(--ink);cursor:pointer}
+  .demo-controls button[aria-pressed="true"]{background:var(--ink);color:var(--paper);
+    border-color:var(--ink)}
+  .demo table{margin:0;font-family:var(--mono);font-size:12.5px}
+  .demo td:first-child{width:2.4em;color:var(--ink-2)}
+
+  /* ------------------------------------------------------------- footer */
+  footer{padding:30px 0 0;border-top:3px double var(--ink);margin-top:28px;
+    font-size:14.5px}
+  footer ul{columns:2;column-gap:34px}
+  @media (max-width:640px){
+    body{font-size:16px}
+    footer ul{columns:1}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="mast">
+  <p class="kicker"><span>pentest-dashboard</span><span>correlation &amp; triage</span><span>change review</span></p>
+  <h1>Ordering findings, and the one probe that logs in</h1>
+  <p class="standfirst">
+    Three additions to the triage pipeline: CVSS as a second sort key, a ranked
+    “start here” view that every surface shares, and an opt-in default-credential
+    probe that reports itself as its own tier. This page explains how each one
+    behaves, what it deliberately refuses to do, and what was actually verified.
+  </p>
+  <div class="artifacts">
+    <span>app/models.py</span>
+    <span>app/correlation/nvd.py</span>
+    <span>app/correlation/engine.py</span>
+    <span>app/correlation/creds.py</span>
+    <span>app/correlation_queue.py</span>
+    <span>app/report/{model,markdown,pdf}.py</span>
+    <span>app/main.py + templates/index.html</span>
+    <span>tutorial.txt</span>
+  </div>
+</header>
+
+<main>
+<!-- ================================================================ 1 -->
+<section id="rule">
+  <p class="step">1 — the rule</p>
+  <h2>Confidence decides. CVSS only breaks ties.</h2>
+  <p class="lede">
+    A CVSS score says how bad a vulnerability would be if it applies. It says
+    nothing about whether it applies to <em>this</em> service. So the ordering
+    tuple is <code>(confidence_rank, cvss_score)</code> — and a candidate with no
+    score sorts below a scored one at the same confidence, never above it.
+  </p>
+  <pre>def <b>rank_key</b>(confidence, cvss_score=None):
+    score = cvss_score if cvss_score is not None else <b>-1.0</b>   <span class="c-dim"># no score ranks last</span>
+    return (<b>CONFIDENCE_ORDER</b>.get(confidence, 0), score)     <span class="c-dim"># confidence is primary</span></pre>
+  <p>
+    One function, three consumers: the engine sorts each port’s candidates, the
+    report re-applies it after reading SQLite, and the dashboard strip ranks whole
+    hosts. They cannot disagree, because they ask the same function.
+  </p>
+
+  <div class="demo">
+    <div class="demo-controls">
+      <span>Sort by:</span>
+      <button type="button" id="btn-rule" aria-pressed="true">confidence, then CVSS (the real rule)</button>
+      <button type="button" id="btn-naive" aria-pressed="false">CVSS alone (what not to do)</button>
+    </div>
+    <table>
+      <caption id="demo-caption">Real candidates from a scan of a Metasploitable-style host.</caption>
+      <thead><tr><th scope="col">#</th><th scope="col">port</th><th scope="col">tier</th><th scope="col">CVSS</th><th scope="col">evidence</th></tr></thead>
+      <tbody id="demo-body"></tbody>
+    </table>
+  </div>
+  <figcaption>
+    Toggle to see the failure mode: sorting on CVSS alone pushes a
+    version-guess with a scary score above a verified exact-version match.
+  </figcaption>
+</section>
+
+<!-- ================================================================ 2 -->
+<section id="pipeline">
+  <p class="step">2 — the pipeline</p>
+  <h2>Where each source enters, and where the ordering is applied</h2>
+  <figure>
+    <div class="diagram">
+      <svg viewBox="0 0 1000 430" role="img" aria-labelledby="pipe-title pipe-desc">
+        <title id="pipe-title">Correlation pipeline with three candidate sources</title>
+        <desc id="pipe-desc">nmap XML is parsed into hosts and ports; every open port is
+        queried against ExploitDB, NVD, and — only when the scan opted in — the
+        default-credential probe. Candidates are deduplicated and sorted by rank_key,
+        then persisted once and read by the dashboard, the report and the exports.</desc>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#4a5766"/>
+          </marker>
+        </defs>
+        <g font-family="ui-monospace,Menlo,Consolas,monospace" font-size="12.5" fill="#151d27">
+          <!-- stage 1 -->
+          <rect x="18" y="150" width="150" height="74" rx="6" fill="#fff" stroke="#c3ccd6"/>
+          <text x="34" y="180">nmap XML</text>
+          <text x="34" y="200" fill="#4a5766">parse_xml()</text>
+          <text x="34" y="216" fill="#4a5766">HostResult / PortResult</text>
+          <line x1="168" y1="187" x2="212" y2="187" stroke="#4a5766" marker-end="url(#arrow)"/>
+
+          <!-- stage 2: per open port -->
+          <rect x="212" y="128" width="176" height="118" rx="6" fill="#fff" stroke="#c3ccd6"/>
+          <text x="228" y="152">CorrelateEngine</text>
+          <text x="228" y="170" fill="#4a5766">per open port</text>
+          <text x="228" y="192" fill="#4a5766">_candidates_for_port()</text>
+          <text x="228" y="214" fill="#4a5766">raw-banner fallback</text>
+          <text x="228" y="232" fill="#4a5766">when 0 hits</text>
+          <line x1="388" y1="187" x2="430" y2="187" stroke="#4a5766" marker-end="url(#arrow)"/>
+
+          <!-- stage 3: sources -->
+          <rect x="430" y="42" width="212" height="60" rx="6" fill="#fff" stroke="#c3ccd6"/>
+          <text x="446" y="66">SearchsploitAdapter</text>
+          <text x="446" y="86" fill="#4a5766">ExploitDB CSV / binary</text>
+
+          <rect x="430" y="118" width="212" height="60" rx="6" fill="#fff" stroke="#c3ccd6"/>
+          <text x="446" y="142">NvdClient</text>
+          <text x="446" y="162" fill="#4a5766">CVE + CVSS v3.1/3.0/2</text>
+
+          <rect x="430" y="194" width="212" height="76" rx="6" fill="#fff" stroke="#8a4fae" stroke-width="1.6"/>
+          <text x="446" y="218" fill="#8a4fae">creds.probe_port()</text>
+          <text x="446" y="238" fill="#4a5766">connect + authenticate</text>
+          <text x="446" y="256" fill="#8a4fae">opt-in only · capped</text>
+
+          <text x="652" y="146" fill="#4a5766" font-size="11.5">candidates</text>
+          <line x1="642" y1="72" x2="676" y2="160" stroke="#4a5766" marker-end="url(#arrow)"/>
+          <line x1="642" y1="148" x2="676" y2="170" stroke="#4a5766" marker-end="url(#arrow)"/>
+          <line x1="642" y1="232" x2="676" y2="186" stroke="#8a4fae" marker-end="url(#arrow)"/>
+
+          <!-- stage 4: rank -->
+          <rect x="676" y="118" width="150" height="96" rx="6" fill="#fff" stroke="#151d27" stroke-width="1.6"/>
+          <text x="692" y="142">dedupe</text>
+          <text x="692" y="162">rank_candidates()</text>
+          <text x="692" y="182" fill="#4a5766">(confidence, cvss)</text>
+          <text x="692" y="200" fill="#4a5766">one per port</text>
+
+          <line x1="826" y1="166" x2="866" y2="166" stroke="#4a5766" marker-end="url(#arrow)"/>
+          <rect x="866" y="118" width="116" height="96" rx="6" fill="#fff" stroke="#c3ccd6"/>
+          <text x="880" y="142">PortFinding</text>
+          <text x="880" y="162" fill="#4a5766">+ summary</text>
+          <text x="880" y="180" fill="#4a5766">start_here</text>
+          <text x="880" y="198" fill="#4a5766">highest_severity</text>
+
+          <!-- persistence -->
+          <rect x="676" y="252" width="306" height="60" rx="6" fill="#0d131c" stroke="#0d131c"/>
+          <text x="692" y="276" fill="#c7d0e0">db.save_candidates()</text>
+          <text x="692" y="296" fill="#6b7688">cvss_score · cvss_severity · sources</text>
+          <line x1="920" y1="214" x2="880" y2="248" stroke="#4a5766" marker-end="url(#arrow)"/>
+
+          <!-- consumers -->
+          <rect x="676" y="344" width="96" height="56" rx="6" fill="#fff" stroke="#c3ccd6"/>
+          <text x="688" y="368" font-size="11.5">dashboard</text>
+          <text x="688" y="386" font-size="11.5" fill="#4a5766">strip · badges</text>
+          <rect x="782" y="344" width="96" height="56" rx="6" fill="#fff" stroke="#c3ccd6"/>
+          <text x="794" y="368" font-size="11.5">report</text>
+          <text x="794" y="386" font-size="11.5" fill="#4a5766">md · pdf · json</text>
+          <rect x="888" y="344" width="94" height="56" rx="6" fill="#fff" stroke="#c3ccd6"/>
+          <text x="900" y="368" font-size="11.5">correlated</text>
+          <text x="900" y="386" font-size="11.5" fill="#4a5766">event / log</text>
+          <line x1="720" y1="312" x2="720" y2="340" stroke="#4a5766" marker-end="url(#arrow)"/>
+          <line x1="826" y1="312" x2="826" y2="340" stroke="#4a5766" marker-end="url(#arrow)"/>
+          <line x1="930" y1="312" x2="930" y2="340" stroke="#4a5766" marker-end="url(#arrow)"/>
+
+          <!-- candidate shapes -->
+          <rect x="18" y="286" width="240" height="114" rx="6" fill="#fff" stroke="#c3ccd6" stroke-dasharray="4 3"/>
+          <text x="34" y="310" fill="#4a5766">Candidate fields that matter</text>
+          <text x="34" y="332">confidence  <tspan fill="#8a4fae">creds</tspan> · high · …</text>
+          <text x="34" y="350">cvss_score / cvss_severity</text>
+          <text x="34" y="368">sources  ["nvd","exploitdb",</text>
+          <text x="86" y="386">"<tspan fill="#8a4fae">default-creds</tspan>"]</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Correlation runs once, in a retrying background queue, over the ports the scan stored. <span class="muted">The diagram pans sideways on narrow screens.</span></figcaption>
+  </figure>
+
+  <div class="note">
+    <span class="lbl">Why the report re-sorts</span>
+    <p>
+      The dashboard and the exports read candidates back from SQLite, where rows
+      come out in insertion order. If the ordering only existed inside the engine,
+      a page reload would silently rebury the best candidate. So
+      <code>build_report()</code> re-applies <code>rank_candidates()</code> on read.
+    </p>
+  </div>
+</section>
+
+<!-- ================================================================ 3 -->
+<section id="tiers">
+  <p class="step">3 — five tiers, two axes</p>
+  <h2>“This version has a CVE” is not “this password works”</h2>
+  <p>
+    The four match tiers describe <em>evidence about a banner</em>. A credential
+    the target accepted is evidence about <em>configuration</em>, and it is a fact
+    rather than an inference — so it gets its own tier and its own colour instead
+    of being dressed up as HIGH.
+  </p>
+  <table>
+    <caption>Confidence tiers as they are stored and displayed</caption>
+    <thead>
+      <tr><th scope="col">Stored value</th><th scope="col">Shown as</th><th scope="col">Means</th><th scope="col">Colour</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>creds</code> <span class="muted">(new)</span></td>
+        <td><span class="tier"><span class="dot t-access"></span>DEFAULT CREDS</span></td>
+        <td>A login the target accepted during an opt-in probe. No CVE/EDB ids are attached, because nothing was exploited.</td>
+        <td><code>--access #c08bd8</code></td>
+      </tr>
+      <tr>
+        <td><code>high</code></td>
+        <td><span class="tier"><span class="dot t-high"></span>HIGH</span></td>
+        <td>Exact version match: the banner names the affected version.</td>
+        <td><code>--red</code></td>
+      </tr>
+      <tr>
+        <td><code>medium</code></td>
+        <td><span class="tier"><span class="dot t-medium"></span>MEDIUM</span></td>
+        <td>Version falls inside a known affected range.</td>
+        <td><code>--amber</code></td>
+      </tr>
+      <tr>
+        <td><code>low</code></td>
+        <td><span class="tier"><span class="dot t-low"></span>LOW</span></td>
+        <td>Name-only match, or the raw-banner keyword fallback.</td>
+        <td><code>--amber</code> / <code>--grey</code></td>
+      </tr>
+      <tr>
+        <td><code>none</code></td>
+        <td><span class="tier"><span class="dot t-none"></span>NONE</span></td>
+        <td>Nothing known. The port is still listed: <code>no known exploit found — manual review required</code>.</td>
+        <td><code>--grey</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="note warn">
+    <span class="lbl">What the new tier does not change</span>
+    <p>
+      The four original tiers keep their exact strings, labels and ordering, and
+      the report never prints “DEFAULT CREDS confidence: 0” — the tier gets its own
+      sentence and only when it happened. <code>confidence</code> is still the
+      primary sort key, so an access finding ranks above a weaker match but a
+      verified credential never claims to be a CVE match.
+    </p>
+  </div>
+</section>
+
+<!-- ================================================================ 4 -->
+<section id="cvss">
+  <p class="step">4 — CVSS</p>
+  <h2>One score, taken from the strongest metric the record has</h2>
+  <p>
+    NVD sometimes publishes several metrics for the same CVE. The parser walks
+    them in NVD’s own order of preference and stops at the first one present, so a
+    CVE can never carry two conflicting severities.
+  </p>
+  <pre>for key in (<b>"cvssMetricV31"</b>, <b>"cvssMetricV30"</b>, <b>"cvssMetricV2"</b>):
+    cvss_score    = metric["cvssData"]["baseScore"]
+    cvss_severity = metric["baseSeverity"]        <span class="c-dim"># v3.x states it</span>
+                    or <b>_severity_from_score</b>(cvss_score, v2=…)  <span class="c-dim"># v2 never did</span></pre>
+  <table>
+    <caption>Bands differ by metric version — that is not cosmetic</caption>
+    <thead><tr><th scope="col">Score</th><th scope="col">CVSS v3.x band</th><th scope="col">CVSS v2 band</th></tr></thead>
+    <tbody>
+      <tr><td>9.4</td><td>CRITICAL</td><td>HIGH</td></tr>
+      <tr><td>8.8</td><td>HIGH</td><td>HIGH</td></tr>
+      <tr><td>5.3</td><td>MEDIUM</td><td>MEDIUM</td></tr>
+      <tr><td>3.1</td><td>LOW</td><td>LOW</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <span class="lbl">Checked against the live API</span>
+    <p>
+      A real NVD 2.0 response for <code>CVE-2011-2523</code> (the vsftpd 2.3.4
+      backdoor) parsed to <code>9.8 / CRITICAL</code> with exact version
+      <code>2.3.4</code> — not just against the offline fixtures.
+    </p>
+  </div>
+  <div class="note careful">
+    <span class="lbl">Cache rows and schema drift</span>
+    <p>
+      Cached NVD payloads outlive code changes. Reconstructing a cached record now
+      filters to the fields the dataclass actually declares, so a row written
+      before CVSS existed loads with no score instead of raising and killing the
+      whole correlation run.
+    </p>
+  </div>
+</section>
+
+<!-- ================================================================ 5 -->
+<section id="start-here">
+  <p class="step">5 — the surfaced capability</p>
+  <h2>“Start here” replaces walking a flat list of ports</h2>
+  <p>
+    The correlation summary, the dashboard strip and the report all render the
+    same rows from <code>models.start_here_rows()</code>: one host each, its best
+    candidate, ordered across the whole scan.
+  </p>
+  <div class="slab">
+<span class="c-dim">// observed in the running dashboard, mock scan, two hosts</span>
+<b>Start here</b>  <span class="c-dim">best candidate per host, ordered by CVSS severity then match confidence</span>
+  <span class="c-access">CVSS 9.8 CRITICAL</span>  <span class="c-high">HIGH match</span>       10.10.10.5:80/tcp  Apache httpd 2.4.49  CVE-2021-41773, EDB-50383
+  <span class="c-dim">no CVSS</span>            <span class="c-high">HIGH match</span>       10.10.10.9:21/tcp  vsftpd 3.0.3        EDB-49757
+  </div>
+  <figcaption>Each row links to its port card; the anchor resolves to <code>#port-&lt;host&gt;-&lt;port&gt;</code>.</figcaption>
+
+  <div class="slab">
+<span class="c-dim">// observed after a real nmap scan of 127.0.0.1:2121 with credential probing opted in</span>
+chips: ports 1 · HIGH 0 · MEDIUM 0 · LOW 0 · NO MATCH 0 · <b>DEFAULT CREDS 1</b>
+start_here: 127.0.0.1:2121/tcp ftp — <span class="c-access">DEFAULT CREDS match</span>, no CVSS
+
+127.0.0.1:2121 best=<b>creds</b>
+   <span class="c-access">creds</span> | [default-creds] | default credential accepted — ftp <b>ftp:ftp</b> authenticated
+                              (FTP replied 230 Login successful); credentials only, nothing was executed
+   <span class="c-low">low</span>   | [exploitdb]     | fallback keyword match on raw banner — verify manually: "ftp" matched EDB-36984
+  </div>
+
+  <div class="note ok">
+    <span class="lbl">Why this is the capability worth having</span>
+    <p>
+      A per-port list answers “what is on this port”. It does not answer “where do
+      I look first”, and on a host with thirty open ports that question is the
+      whole job. One ranked row per host, shared by data, report and UI, is the
+      smallest thing that answers it — and it survives a reload because it is
+      derived from stored candidates rather than from a live event.
+    </p>
+  </div>
+</section>
+
+<!-- ================================================================ 6 -->
+<section id="creds">
+  <p class="step">6 — the opt-in probe</p>
+  <h2>Connect, authenticate, stop</h2>
+  <p>
+    This is the one source that actively touches the target. It opens a TCP
+    connection to a port the scan already saw open, tries a handful of published
+    defaults, and reports what the service itself said. Nothing is uploaded,
+    executed or read beyond the login handshake.
+  </p>
+
+  <figure>
+    <div class="diagram">
+      <svg viewBox="0 0 900 250" role="img" aria-labelledby="creds-title creds-desc">
+        <title id="creds-title">Which services the credential probe will and will not attempt</title>
+        <desc id="creds-desc">FTP, MySQL, PostgreSQL, telnet and Tomcat manager are probed with a curated list of at most five pairs, stopping at the first success. VNC is probed only for its no-authentication handshake. SSH is never probed in-process.</desc>
+        <g font-family="ui-monospace,Menlo,Consolas,monospace" font-size="12.5">
+          <rect x="14" y="20" width="200" height="210" rx="6" fill="#fff" stroke="#c3ccd6"/>
+          <text x="30" y="44" fill="#151d27">service_key()</text>
+          <text x="30" y="66" fill="#4a5766">name, else product/CPE</text>
+          <text x="30" y="96" fill="#4a5766">ftp · ftp-data</text>
+          <text x="30" y="116" fill="#4a5766">mysql</text>
+          <text x="30" y="136" fill="#4a5766">postgresql</text>
+          <text x="30" y="156" fill="#4a5766">telnet</text>
+          <text x="30" y="176" fill="#4a5766">http + tomcat → manager</text>
+          <text x="30" y="196" fill="#4a5766">vnc · rfb</text>
+          <text x="30" y="216" fill="#4a5766">ssh</text>
+
+          <rect x="262" y="30" width="240" height="88" rx="6" fill="#fff" stroke="#8a4fae" stroke-width="1.6"/>
+          <text x="278" y="54" fill="#8a4fae">full connect + login</text>
+          <text x="278" y="74" fill="#4a5766">ftp · mysql · postgresql</text>
+          <text x="278" y="92" fill="#4a5766">telnet · tomcat-manager</text>
+          <text x="278" y="110" fill="#4a5766">≤ 5 pairs, 6s each, stop on hit</text>
+
+          <rect x="262" y="132" width="240" height="46" rx="6" fill="#fff" stroke="#8a4fae" stroke-width="1.6"/>
+          <text x="278" y="152" fill="#8a4fae">handshake only</text>
+          <text x="278" y="170" fill="#4a5766">vnc → “no authentication offered”</text>
+
+          <rect x="262" y="190" width="240" height="46" rx="6" fill="#fff" stroke="#c3ccd6" stroke-dasharray="4 3"/>
+          <text x="278" y="210" fill="#4a5766">ssh → reported as manual</text>
+          <text x="278" y="228" fill="#4a5766">(needs a full key exchange)</text>
+
+          <line x1="214" y1="66" x2="258" y2="70" stroke="#8a4fae" marker-end="url(#arrow)"/>
+          <line x1="214" y1="192" x2="258" y2="155" stroke="#8a4fae" marker-end="url(#arrow)"/>
+          <line x1="214" y1="216" x2="258" y2="213" stroke="#4a5766" marker-end="url(#arrow)"/>
+
+          <rect x="546" y="60" width="330" height="150" rx="6" fill="#0d131c" stroke="#0d131c"/>
+          <text x="564" y="86" fill="#c7d0e0">ProbeOutcome</text>
+          <text x="564" y="110" fill="#6b7688">hits        accepted pairs + evidence</text>
+          <text x="564" y="130" fill="#6b7688">attempts    how many were spent</text>
+          <text x="564" y="150" fill="#6b7688">detail      last refusal / unsupported method</text>
+          <text x="564" y="170" fill="#6b7688">skipped     services only a human can check</text>
+          <text x="564" y="190" fill="#6b7688">error       transport failure — ends the port</text>
+          <line x1="506" y1="135" x2="542" y2="135" stroke="#4a5766" marker-end="url(#arrow)"/>
+        </g>
+      </svg>
+    </div>
+    <figcaption>“No hit”, “could not check” and “the transport failed” are three different facts and are stored as three different fields. <span class="muted">The diagram pans sideways on narrow screens.</span></figcaption>
+  </figure>
+
+  <table>
+    <caption>Curated pairs — a handful of published defaults, never a wordlist</caption>
+    <thead><tr><th scope="col">Service</th><th scope="col">Pairs tried, in order</th><th scope="col">How a hit is judged</th></tr></thead>
+    <tbody>
+      <tr><td><code>ftp</code></td><td><code>anonymous:anonymous</code>, <code>ftp:ftp</code>, <code>admin:admin</code></td><td>FTP reply <code>230</code></td></tr>
+      <tr><td><code>mysql</code></td><td><code>root:</code> (empty), <code>root:root</code>, <code>root:mysql</code>, <code>mysql:mysql</code></td><td>OK packet after a native-password handshake</td></tr>
+      <tr><td><code>postgresql</code></td><td><code>postgres:postgres</code>, <code>postgres:</code>, <code>postgres:password</code></td><td><code>AuthenticationOk</code> — including trust auth, reported as “no password required”</td></tr>
+      <tr><td><code>telnet</code></td><td><code>root:</code>, <code>msfadmin:msfadmin</code>, <code>admin:admin</code>, <code>root:toor</code></td><td>A shell prompt after a failure-free login sequence (prompt heuristic, stated as such)</td></tr>
+      <tr><td><code>tomcat-manager</code></td><td><code>tomcat:tomcat</code>, <code>admin:admin</code>, <code>manager:manager</code></td><td>HTTP 200 from <code>/manager/html</code></td></tr>
+      <tr><td><code>vnc</code></td><td>password pairs listed for humans only</td><td>Security type 1 (none) is a hit; type 2 is declined — DES is not implemented</td></tr>
+      <tr><td><code>ssh</code></td><td>pairs listed for humans only</td><td>Never claimed. The summary names it under <code>manual_only</code> instead of staying quiet</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note careful">
+    <span class="lbl">Deliberate refusals</span>
+    <ul>
+      <li>At most <strong>5 attempts per port</strong>, with a hard per-attempt timeout, and it stops at the first success — this cannot become a lockout or a brute-force run.</li>
+      <li>An unreachable service costs <strong>one</strong> attempt, not five: five timeouts are one fact repeated.</li>
+      <li>SCRAM-SHA-256 and MySQL auth-plugin switching are declined with a reason rather than guessed at.</li>
+      <li>Offline/mock mode never probes — there is no real target to authenticate to.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================================================================ 7 -->
+<section id="ledger">
+  <p class="step">7 — the ledger</p>
+  <h2>What was verified, and what could not be</h2>
+  <table>
+    <caption>Evidence collected while building this, not inferred from the code</caption>
+    <thead><tr><th scope="col">Claim</th><th scope="col">How it was checked</th><th scope="col">Result</th></tr></thead>
+    <tbody>
+      <tr><td>The whole suite still passes</td><td><code>python -m pytest -q</code> after every edit</td><td>362 → 400 passed, exit 0</td></tr>
+      <tr><td>Live NVD parsing</td><td>Real NVD 2.0 response for CVE-2011-2523 through <code>_norm_cve</code></td><td>9.8 / CRITICAL / version 2.3.4</td></tr>
+      <tr><td>Ranking survives persistence</td><td>Correlate → SQLite → <code>build_report</code> → JSON export</td><td>Best-first order and CVSS intact</td></tr>
+      <tr><td>Credential probe, end to end</td><td>Real nmap scan of 127.0.0.1:2121 against a local FTP stub, via the browser form</td><td>DEFAULT CREDS candidate, own chip, ranked first, no console errors</td></tr>
+      <tr><td>Opt-out means no traffic</td><td>Loopback server counting connections with the option off</td><td>Zero connections</td></tr>
+      <tr><td>Re-correlate from the UI</td><td>Clicked the button on a triaged scan</td><td>Re-queued over stored ports, candidates rebuilt</td></tr>
+      <tr><td>Protocol correctness of the probes</td><td>Loopback stubs for FTP/MySQL/PostgreSQL/telnet/VNC/HTTP</td><td>Framing verified; <em>the stubs share my formulas, so only a real server can catch a shared-formula error</em></td></tr>
+      <tr><td>Report exports</td><td>md / pdf / json fetched over HTTP</td><td>200; “Where to start” and the credential sentence present</td></tr>
+    </tbody>
+  </table>
+  <div class="note warn">
+    <span class="lbl">Left unbuilt, on purpose</span>
+    <p>
+      SSH and VNC password verification (needs real key exchange and DES), a
+      wordlist mode, and automatic exploit execution. This tool names things; it
+      does not attack them.
+    </p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <p class="muted">
+    Where things live now: the ranking rule and the tiers in
+    <code>app/models.py</code>; CVSS parsing in <code>app/correlation/nvd.py</code>;
+    the probe in <code>app/correlation/creds.py</code>; the opt-in plumbing from
+    the scan form through <code>app/correlation_queue.py</code> to the engine;
+    presentation in <code>app/main.py</code>, the template and the CSS.
+  </p>
+  <ul>
+    <li>Run the app: <code>python run_server.py</code></li>
+    <li>New-user walkthrough: <code>tutorial.txt</code></li>
+    <li>Authorized testing only — every finding is a candidate</li>
+  </ul>
+</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  /* Real candidates observed on a scan of a Metasploitable-style host. */
+  var ROWS = [
+    {port: "80/tcp",   tier: "HIGH",          cls: "c-high",   score: 9.8,
+     evidence: "exact version match: Apache httpd 2.4.49 == affected version 2.4.49 (CVE-2021-41773)"},
+    {port: "21/tcp",   tier: "HIGH",          cls: "c-high",   score: null,
+     evidence: "exact version match: EDB-49757 names 3.0.3 — no CVE score attached"},
+    {port: "3306/tcp", tier: "MEDIUM",        cls: "c-med",    score: 4.9,
+     evidence: "version range match: MySQL 5.7.31 inside the affected range (CVE-2021-2117)"},
+    {port: "2121/tcp", tier: "DEFAULT CREDS", cls: "c-access", score: null,
+     evidence: "default credential accepted — ftp ftp:ftp authenticated (FTP replied 230)"}
+  ];
+
+  function rank(confidence, score) {
+    var order = {"DEFAULT CREDS": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "NONE": 0};
+    return [order[confidence] || 0, score === null || score === undefined ? -1 : score];
+  }
+
+  function compare(a, b, naive) {
+    if (naive) {
+      var sa = a.score === null ? -1 : a.score, sb = b.score === null ? -1 : b.score;
+      return sb - sa;
+    }
+    var ka = rank(a.tier, a.score), kb = rank(b.tier, b.score);
+    if (ka[0] !== kb[0]) return kb[0] - ka[0];
+    return kb[1] - ka[1];
+  }
+
+  var body = document.getElementById("demo-body");
+  var caption = document.getElementById("demo-caption");
+  var btnRule = document.getElementById("btn-rule");
+  var btnNaive = document.getElementById("btn-naive");
+
+  function draw(naive) {
+    var rows = ROWS.slice().sort(function (a, b) { return compare(a, b, naive); });
+    body.textContent = "";
+    rows.forEach(function (row, i) {
+      var tr = document.createElement("tr");
+      var cells = [
+        String(i + 1),
+        row.port,
+        row.tier,
+        row.score === null ? "no CVSS" : row.score.toFixed(1)
+      ];
+      cells.forEach(function (text, idx) {
+        var td = document.createElement("td");
+        if (idx === 2) {
+          var span = document.createElement("span");
+          span.className = row.cls;
+          span.textContent = text;
+          td.appendChild(span);
+        } else {
+          td.textContent = text;
+        }
+        tr.appendChild(td);
+      });
+      var tdEvidence = document.createElement("td");
+      tdEvidence.textContent = row.evidence;
+      tr.appendChild(tdEvidence);
+      body.appendChild(tr);
+    });
+    caption.textContent = naive
+      ? "Sorted on CVSS alone: the exact-version match drops below a 4.9 range match, because it has no score."
+      : "Sorted by the real rule: confidence first, CVSS as the tie-break.";
+  }
+
+  btnRule.addEventListener("click", function () {
+    btnRule.setAttribute("aria-pressed", "true");
+    btnNaive.setAttribute("aria-pressed", "false");
+    draw(false);
+  });
+  btnNaive.addEventListener("click", function () {
+    btnNaive.setAttribute("aria-pressed", "true");
+    btnRule.setAttribute("aria-pressed", "false");
+    draw(true);
+  });
+
+  draw(false);
+})();
+</script>
+</body>
+</html>
